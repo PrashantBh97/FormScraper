@@ -28,7 +28,7 @@ def load_urls_from_file(file_path):
 if __name__ == "__main__":
     # Hardcoded configuration
     url_file = "urls.txt"  # Your URLs file
-    output_file = "form_fields.csv"  # Output CSV file
+    output_file = "form_fields_new.csv"  # Output CSV file
     batch_size = 20  # URLs per batch
     timeout = 30  # Page load timeout in seconds
     headless = True  # Set to False to see the browser window
