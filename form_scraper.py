@@ -147,75 +147,146 @@ class FormFieldScraper:
                     return self.scrape_form_fields(url, retry_count+1, max_retries)
         
         return result
-    
+
     def process_form_elements(self, elements, result):
-        """Process form elements and update the result dictionary"""
-        # First pass: collect all fields
-        for element in elements:
-            try:
-                element_type = element.get_attribute("type") or element.tag_name
-                
-                # Skip hidden inputs
-                if element_type == 'hidden':
-                    continue
-                
-                # Special handling for submit buttons
-                if element_type in ['submit', 'button', 'image']:
-                    self.form_analyzer.process_button(element, result)
-                    continue
-                
-                is_required = self.form_analyzer.is_element_required(element)
-                guessed_name = self.field_detector.guess_field_name(element, self.driver)
-                mapped_field = self.field_detector.map_to_standard_field(guessed_name, element_type)
-                
-                if mapped_field and not result['fields'][mapped_field]['found']:
-                    # Map to standard field
-                    result['fields'][mapped_field] = {
-                        'xpath': self.form_analyzer.get_xpath(element),
-                        'type': element_type,
-                        'required': is_required,
-                        'found': True
-                    }
-                elif is_required:
-                    # This is a required field but doesn't match our standard fields
-                    result['additional_fields'].append({
-                        'field_name': guessed_name,
-                        'xpath': self.form_analyzer.get_xpath(element),
-                        'element_type': element_type,
-                        'required': True
-                    })
-                # Capture non-required additional fields as well
-                elif not mapped_field:
-                    result['additional_fields'].append({
-                        'field_name': guessed_name,
-                        'xpath': self.form_analyzer.get_xpath(element),
-                        'element_type': element_type,
-                        'required': False
-                    })
-            except StaleElementReferenceException:
-                continue
-            except Exception as e:
-                logger.debug(f"Error processing element: {str(e)}")
-                continue
+        """
+        Process form elements with enhanced detection
         
-        # If no submit button found yet, try to find it using our specialized method
-        if not result['fields']['Submit']['found']:
-            submit_buttons = self.form_analyzer.find_submit_buttons()
-            if submit_buttons:
+        Args:
+            elements (list): Web elements to process
+            result (dict): Result dictionary to update
+        
+        Returns:
+            None: Updates result in-place
+        """
+        # Tracking variables for smart detection
+        processed_fields = set()
+        
+        # Enhanced candidate tracking
+        privacy_candidates = []
+        email_confirmation_candidates = []
+        
+        # First pass: Primary field detection
+        try:
+            # Validate input
+            if not elements:
+                logger.warning("No elements found to process")
+                return
+            
+            for element in elements:
                 try:
-                    element_type = submit_buttons[0].get_attribute("type") or "button"
-                    result['fields']['Submit'] = {
-                        'xpath': self.form_analyzer.get_xpath(submit_buttons[0]),
-                        'type': element_type,
-                        'required': True,
-                        'found': True
-                    }
-                except:
-                    pass
+                    # Skip if element is invalid
+                    if not self.form_analyzer.is_element_visible(element):
+                        continue
+                    
+                    element_type = element.get_attribute("type") or element.tag_name
+                    
+                    # Skip hidden inputs
+                    if element_type == 'hidden':
+                        continue
+                    
+                    # Special handling for submit buttons
+                    if element_type in ['submit', 'button', 'image']:
+                        self.form_analyzer.process_button(element, result)
+                        continue
+                    
+                    guessed_name = self.field_detector.guess_field_name(element, self.driver)
+                    mapped_field = self.field_detector.map_to_standard_field(guessed_name, element_type)
+                    
+                    # Detect required status
+                    is_required = self.form_analyzer.is_element_required(element)
+                    
+                    # Collect privacy policy candidates
+                    if element_type in ['checkbox', 'radio']:
+                        privacy_terms = ["privacy", "terms", "policy", "agree", "consent", "gdpr"]
+                        if any(term in guessed_name.lower() for term in privacy_terms):
+                            privacy_candidates.append((element, guessed_name))
+                    
+                    # Collect email confirmation candidates
+                    if (mapped_field == 'ConfirmEmail' or 
+                        (element_type == 'email' and 
+                        any(term in guessed_name.lower() for term in ['confirm', 'verify', 'repeat']))):
+                        email_confirmation_candidates.append((element, guessed_name))
+                    
+                    # Map primary fields
+                    if mapped_field and mapped_field not in processed_fields:
+                        result['fields'][mapped_field] = {
+                            'xpath': self.form_analyzer.get_xpath(element),
+                            'type': element_type,
+                            'required': is_required,
+                            'found': True
+                        }
+                        processed_fields.add(mapped_field)
+                    elif is_required:
+                        # Capture required additional fields
+                        result['additional_fields'].append({
+                            'field_name': guessed_name,
+                            'xpath': self.form_analyzer.get_xpath(element),
+                            'element_type': element_type,
+                            'required': True
+                        })
+                    
+                    # Capture non-required additional fields
+                    elif not mapped_field:
+                        result['additional_fields'].append({
+                            'field_name': guessed_name,
+                            'xpath': self.form_analyzer.get_xpath(element),
+                            'element_type': element_type,
+                            'required': False
+                        })
+                
+                except Exception as e:
+                    logger.debug(f"Individual element processing error: {e}")
+            
+            # Add privacy field if not found
+            if privacy_candidates and not result['fields']['Privacy']['found']:
+                best_privacy = privacy_candidates[0][0]
+                result['fields']['Privacy'] = {
+                    'xpath': self.form_analyzer.get_xpath(best_privacy),
+                    'type': best_privacy.get_attribute("type"),
+                    'required': False,
+                    'found': True
+                }
+            
+            # Add email confirmation field if not found
+            if email_confirmation_candidates and not result['fields']['ConfirmEmail']['found']:
+                best_confirm = email_confirmation_candidates[0][0]
+                result['fields']['ConfirmEmail'] = {
+                    'xpath': self.form_analyzer.get_xpath(best_confirm),
+                    'type': best_confirm.get_attribute("type"),
+                    'required': False,
+                    'found': True
+                }
+            
+            # Ensure submit button is found
+            if not result['fields']['Submit']['found']:
+                submit_buttons = self.form_analyzer.find_submit_buttons()
+                if submit_buttons:
+                    try:
+                        element_type = submit_buttons[0].get_attribute("type") or "button"
+                        result['fields']['Submit'] = {
+                            'xpath': self.form_analyzer.get_xpath(submit_buttons[0]),
+                            'type': element_type,
+                            'required': True,
+                            'found': True
+                        }
+                    except:
+                        pass
+            
+            # Additional pass to find missing priority fields
+            self.find_missing_fields(elements, result)
         
-        # Second pass: find privacy checkboxes and important missing fields
-        self.find_missing_fields(elements, result)
-    
+        except Exception as e:
+            logger.error(f"Comprehensive field processing error: {e}")
+            # Ensure minimal result structure if processing fails
+            if 'Submit' not in result['fields']:
+                result['fields']['Submit'] = {
+                    'xpath': '',
+                    'type': '',
+                    'required': False,
+                    'found': False
+                } 
+
     def find_missing_fields(self, elements, result):
         """Find any important fields that weren't identified in the first pass"""
         # Look for privacy checkbox
