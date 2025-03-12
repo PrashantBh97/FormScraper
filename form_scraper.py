@@ -95,6 +95,10 @@ class FormFieldScraper:
                 WebDriverWait(self.driver, self.timeout).until(
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
+
+                self.form_analyzer.dismiss_cookie_banners()
+                # Short delay to let the page settle
+                time.sleep(1)
             except TimeoutException:
                 result['error'] = "Timeout loading page"
                 return result

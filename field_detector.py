@@ -21,31 +21,53 @@ class FieldDetector:
         self.field_patterns = {
             "Title": ["title", "prefix", "salutation", "honorific", "mr", "mrs", "ms", "dr", "prof", "suffix"],
             
-            "FirstName": ["first name", "firstname", "given name", "forename", "first", "fname", "givenname"],
+            "FirstName": ["first name", "firstname", "given name", "forename", "first", "fname", "givenname", 
+                         "name.*first", "first.*name", "given", "name_first"],
             
-            "LastName": ["last name", "lastname", "surname", "family name", "last", "lname", "familyname"],
+            "LastName": ["last name", "lastname", "surname", "family name", "last", "lname", "familyname", 
+                        "name.*last", "last.*name", "family", "name_last", "sur name"],
             
-            "Email": ["email", "e-mail", "mail", "emailaddress", "e mail"],
+            "Email": ["email", "e-mail", "mail", "emailaddress", "e mail", "your email", "primary email", 
+                     "contact email", "email.*address", "address.*email"],
             
-            "ConfirmEmail": ["confirm email", "repeat email", "verify email", "email confirm", "reenter email"],
+            "ConfirmEmail": ["confirm email", "repeat email", "verify email", "email confirm", "reenter email", 
+                            "confirm.*email", "email.*confirm", "email.*again", "retype.*email", "verify.*email"],
             
-            "JobTitle": ["job title", "position", "role", "job role", "job position", "occupation", "title", "jobtitle"],
+            "JobTitle": ["job title", "position", "role", "job role", "job position", "occupation", "title", "jobtitle", 
+                         "job_title", "job-title", "job function", "profession", "work title"],
             
-            "Organization": ["company", "organization", "organisation", "employer", "business", "firm", "workplace"],
+            "Organization": ["company", "organization", "organisation", "employer", "business", "firm", "workplace", 
+                            "company name", "employer name", "business name", "organization name", "institution", "Company Type" 
+                            "corporation", "agency", "department", "employer info"],
             
-            "Phone": ["phone", "telephone", "mobile", "cell", "contact number", "phonenumber", "tel"],
+            "Phone": ["phone", "telephone", "mobile", "cell", "contact number", "phonenumber", "tel", 
+                      "phone.*number", "mobile.*number", "contact.*phone", "daytime phone", "evening phone", 
+                      "cell.*number", "primary phone", "work phone", "home phone"],
             
-            "Street": ["street", "address", "address line", "street address", "road", "addressline1", "address1"],
+            "Street": ["street", "address", "address line", "street address", "road", "addressline1", "address1", 
+                      "addr1", "address line 1", "street name", "house number", "building", "apartment", 
+                      "street.*address", "address.*line.*1", "addr.*line1", "address.*street", "shipping address", 
+                      "billing address", "mailing address", "delivery address", "residence", "location"],
             
-            "City": ["city", "town", "locality", "municipality"],
+            "City": ["city", "town", "locality", "municipality", "urban area", "township", "city/town", 
+                     "city name", "place", "village", "borough", "location.*city", "city.*location", "address.*city"],
             
-            "State": ["state", "province", "region", "county", "territory"],
+            "State": ["state", "province", "region", "county", "territory", "division", "district", 
+                      "state/province", "administrative area", "location.*state", "state.*region", 
+                      "region.*state", "area"],
             
-            "Zipcode": ["zip", "zipcode", "postal code", "post code", "zip code", "postalcode", "postcode"],
+            "Zipcode": ["zip", "zipcode", "postal code", "post code", "zip code", "postalcode", "postcode", 
+                        "postal", "pin code", "pin", "code postal", "zipcode.*postal", "postal.*zip", 
+                        "zip.*code", "postal.*code", "area code"],
             
-            "Country": ["country", "nation"],
+            "Country": ["country", "nation", "land", "territory", "nationality", "national", "country name", 
+                        "country/region", "region/country", "location.*country", "country.*location"],
             
-            "Privacy": ["privacy", "terms", "consent", "agree", "accept", "policy", "opt in", "gdpr", "marketing"]
+            "Privacy": ["privacy", "terms", "consent", "agree", "accept", "policy", "opt in", "gdpr", "marketing", 
+                        "permission", "subscribe", "newsletter", "communications", "contact me", "contact you", 
+                        "send me", "send you", "preference", "privacy.*policy", "terms.*conditions", 
+                        "terms.*service", "cookie", "data policy", "personal data", "personal information", 
+                        "data.*collect", "process.*data", "agreement", "updates", "notifications", "legal"]
         }
     
     def guess_field_name(self, element, driver):
@@ -106,6 +128,54 @@ class FieldDetector:
         except:
             pass
         
+        # NEW: Check for common address field container classes
+        try:
+            address_containers = [
+                ".//ancestor::div[contains(@class, 'address')]",
+                ".//ancestor::div[contains(@class, 'shipping')]",
+                ".//ancestor::div[contains(@class, 'billing')]",
+                ".//ancestor::fieldset[contains(.//legend, 'address')]"
+            ]
+            
+            for xpath in address_containers:
+                try:
+                    container = element.find_element(By.XPATH, xpath)
+                    if container:
+                        # Try to get field section name if it's an address field
+                        section_hints = []
+                        try:
+                            # Check if there are hints in legends or section headers
+                            headers = container.find_elements(By.XPATH, ".//legend | .//h3 | .//h4 | .//label[contains(@class, 'heading')]")
+                            for header in headers:
+                                if header.text.strip():
+                                    section_hints.append(header.text.strip().lower())
+                        except:
+                            pass
+                        
+                        # Add address hint if we found a container
+                        field_hints.append("address field")
+                        if section_hints:
+                            field_hints.extend(section_hints)
+                        break
+                except:
+                    continue
+        except:
+            pass
+        
+        # NEW: Check for label text after the element (for address fields sometimes)
+        try:
+            next_elements = element.find_elements(By.XPATH, "./following-sibling::*")
+            for next_elem in next_elements[:2]:  # Only check the next 2 elements
+                try:
+                    if next_elem.tag_name in ['label', 'span', 'div', 'p']:
+                        text = next_elem.text.strip().lower()
+                        if text and len(text) < 50:
+                            field_hints.append(text)
+                except:
+                    continue
+        except:
+            pass
+        
         # Filter out empty strings and duplicates
         field_hints = [h for h in field_hints if h and not h.isspace()]
         
@@ -127,12 +197,40 @@ class FieldDetector:
         try:
             guessed_name = guessed_name.lower()
             
-            # Special handling for privacy checkboxes/radios
+            # Enhanced privacy checkbox detection
             if element_type in ['checkbox', 'radio']:
-                terms_patterns = self.field_patterns["Privacy"]
-                for pattern in terms_patterns:
+                privacy_patterns = self.field_patterns["Privacy"]
+                
+                # Special enhanced check for address type fields
+                for pattern in privacy_patterns:
                     if pattern in guessed_name:
                         return "Privacy"
+                        
+                # Additional checks for common privacy consent patterns
+                privacy_indicators = [
+                    "i agree", "agree to", "accept", "consent", 
+                    "subscribe", "sign up", "opt in", "permission",
+                    "can contact", "may contact", "receive"
+                ]
+                
+                for indicator in privacy_indicators:
+                    if indicator in guessed_name:
+                        return "Privacy"
+            
+            # Enhanced address field detection
+            address_type_indicators = {
+                "Street": ["address line", "street address", "address1", "billing address", "shipping address"],
+                "City": ["city", "town"],
+                "State": ["state", "province", "region"],
+                "Zipcode": ["zip", "postal", "post code"],
+                "Country": ["country", "nation"]
+            }
+            
+            # Check each address type first with more specific patterns
+            for field, indicators in address_type_indicators.items():
+                for indicator in indicators:
+                    if indicator in guessed_name:
+                        return field
             
             # Check input type for email fields
             if element_type == 'email':
@@ -165,6 +263,21 @@ class FieldDetector:
                         logger.debug(f"Regex error with pattern {pattern}")
                         if pattern in guessed_name:
                             return std_field
+        
+            # NEW: Handle address fields with common name/id patterns
+            address_patterns = {
+                "Street": ["addr", "address1", "line1", "street", "thoroughfare"],
+                "City": ["city", "town", "locality"],
+                "State": ["state", "province", "region", "territory"],
+                "Zipcode": ["zip", "postal", "postcode", "postalcode"],
+                "Country": ["country", "nation", "countries"]
+            }
+            
+            for field, patterns in address_patterns.items():
+                for pattern in patterns:
+                    if pattern in guessed_name:
+                        return field
+                        
         except Exception as e:
             logger.debug(f"Error in map_to_standard_field: {str(e)}")
                     

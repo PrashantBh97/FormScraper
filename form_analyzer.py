@@ -2,6 +2,7 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import StaleElementReferenceException, NoSuchElementException, JavascriptException
 import logging
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -514,3 +515,37 @@ class FormAnalyzer:
         # Sort candidates by score and return the best one
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[0][0] if candidates else None
+
+    def dismiss_cookie_banners(driver):
+        """Attempt to dismiss common cookie banners"""
+        # Common cookie accept button selectors
+        cookie_button_selectors = [
+            "button[contains(., 'Accept')]",
+            "button[contains(., 'Cookie')]",
+            "button[contains(., 'I agree')]",
+            "a[contains(., 'Accept')]",
+            ".cookie-banner button",
+            "#cookie-notice button",
+            ".consent-banner button",
+            "div[class*='cookie'] button",
+            "div[class*='gdpr'] button",
+            "div[id*='cookie'] button",
+            ".modal button"
+        ]
+        
+        for selector in cookie_button_selectors:
+            try:
+                buttons = driver.find_elements(By.XPATH, f"//{selector}")
+                for button in buttons:
+                    if button.is_displayed() and (
+                        "accept" in button.text.lower() or 
+                        "agree" in button.text.lower() or
+                        "ok" in button.text.lower()
+                    ):
+                        button.click()
+                        time.sleep(1)  # Give time for the banner to disappear
+                        return True
+            except:
+                continue
+        
+        return False
